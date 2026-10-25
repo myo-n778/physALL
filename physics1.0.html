@@ -164,6 +164,9 @@
         .katex { font-size: 1.1em; }
         .katex-display { margin: 1em 0; }
     </style>
+    <script src="quiz-feedback.js"></script>
+    <script src="quiz-explanation.js"></script>
+    <style>[data-explanation-panel][hidden] { display: none !important; }</style>
 </head>
 <body class="min-h-screen flex flex-col">
 
@@ -236,7 +239,7 @@
                 <div class="lg:col-span-2 space-y-4">
                     <div class="glass-panel rounded-[1.5rem] md:rounded-[2.5rem] p-5 md:p-8 space-y-4">
                         <div class="flex justify-between items-center">
-                            <h2 class="text-[10px] font-black uppercase flex items-center gap-2" style="color: var(--accent-primary)"><i class="fas fa-chart-area"></i> Neural Performance</h2>
+                            <h2 class="text-[10px] font-black uppercase flex items-center gap-2" style="color: var(--accent-primary)"><i class="fas fa-chart-area"></i> 学習記録</h2>
                             <div class="flex gap-2">
                                 <button onclick="window.toggleWeakList()" class="text-[9px] bg-rose-500/20 text-rose-300 px-3 py-1 rounded-full border border-rose-500/30 font-black uppercase"><i class="fas fa-search"></i> Weak Points</button>
                                 <button onclick="window.syncAllFromSpreadsheet(false)" class="text-[9px] bg-white/10 text-white px-3 py-1 rounded-full border border-white/20 font-black uppercase"><i class="fas fa-sync-alt"></i> Sync</button>
@@ -278,8 +281,8 @@
             <div id="sync-area" class="hidden glass-panel rounded-[1.5rem] p-6 border-white/10 space-y-6 fade-in mt-6 md:mt-8">
                 <div class="space-y-4">
                     <div class="flex justify-between items-center">
-                        <h3 class="text-xs font-black text-emerald-400 uppercase italic flex items-center gap-2"><i class="fas fa-palette"></i> Visual Focus Modes</h3>
-                        <span class="text-[8px] text-white/50 uppercase font-black">Scroll to explore</span>
+                        <h3 class="text-xs font-black text-emerald-400 uppercase italic flex items-center gap-2"><i class="fas fa-palette"></i> テーマ</h3>
+
                     </div>
                     <div id="theme-grid" class="grid grid-cols-10 gap-2 max-h-48 overflow-y-auto pr-2"></div>
                 </div>
@@ -317,7 +320,7 @@
                     <div id="result-badge" class="px-5 py-2 rounded-full text-[10px] font-black uppercase w-fit text-white"></div>
                     <div id="voice-message" class="font-flashy text-xl md:text-3xl font-black italic tracking-tight" style="color: var(--accent-primary)"></div>
                 </div>
-                <div class="bg-white/5 rounded-[1.5rem] p-6 border border-white/10 shadow-inner"><div id="explanation-content" class="explanation-card text-slate-300 text-sm md:text-base whitespace-pre-line px-4"></div></div>
+                <div data-explanation-panel class="bg-white/5 rounded-[1.5rem] p-6 border border-white/10 shadow-inner"><div id="explanation-content" class="explanation-card text-slate-300 text-sm md:text-base whitespace-pre-line px-4"></div></div>
                 <button id="next-btn-action" class="w-full bg-white text-slate-900 font-black py-4 rounded-2xl text-lg flex justify-center items-center gap-4 group">PROCEED <i class="fas fa-chevron-right group-hover:translate-x-1 transition-transform"></i></button>
             </div>
         </div>
@@ -1257,7 +1260,7 @@
                         tag: "標準", // CSV形式ではタグ情報がないためデフォルト値
                         options: options,
                         answer: answer,
-                        explanation: `正解: ${answer}` // 簡易的な解説
+                        explanation: '' // 解説は未提供。答えを解説として複製しない。
                     });
                 }
             });
@@ -1272,7 +1275,7 @@
                 if (cols[0] === "問題" || cols.length < 5) return null;
                 let qRaw = cols[0].replace(/^[（\(](基礎|標準|応用|発展)[）\)]/, "").trim().replace(/([①②③④])/g, '<br>$1').replace(/^<br>/, ''); // 最初の行の先頭の<br>を削除
                 let tag = cols[0].match(/^[（\(](基礎|標準|応用|発展)[）\)]/)?.[1] || "標準";
-                let rawExpl = (cols[13] || cols[14] || "詳細解説準備中。");
+                let rawExpl = (cols[13] || cols[14] || "");
                 return { id: `${eraName}-${i + 1}`, era: eraName, question: qRaw, tag, options: [cols[1], cols[2], cols[3], cols[4]], answer: (parseInt(cols[10]) >= 1 && parseInt(cols[10]) <= 4) ? cols[parseInt(cols[10])] : cols[10], explanation: rawExpl.replace(/([①②③④])/g, '<br>$1') };
             }).filter(p => p !== null);
         }
@@ -1610,7 +1613,7 @@
             return selected.slice(0, 10); // 必ず10問
         };
 
-        function startQuiz() { 
+        function startQuiz() { QuizFeedback.clear();
             currentIdx = 0; score = 0; streak = 0; sessionAnswers = []; 
             // シャッフルが有効な場合、問題の出題順をシャッフル
             if (isQuestionShuffleEnabled) {
@@ -1618,7 +1621,8 @@
             }
             getEl('home-screen').classList.add('hidden'); getEl('quiz-screen').classList.remove('hidden'); getEl('q-total').innerText = quizData.length; renderDots(); showQuestion(); 
         }
-        function showQuestion() { 
+        function showQuestion() {
+            QuizFeedback.clear();
             canAnswer = true; const q = quizData[currentIdx]; getEl('q-current').innerText = currentIdx + 1; 
             getEl('current-accuracy').innerText = (currentIdx === 0 ? 0 : Math.round((score/currentIdx)*100)) + '%'; 
             getEl('current-streak').innerText = streak; getEl('diff-badge').innerText = `${q.era} | ${q.tag}`; 
@@ -1659,7 +1663,7 @@
         }
         
         async function handleAnswer(selected, btn) { 
-            if (!canAnswer) return; canAnswer = false; const q = quizData[currentIdx]; const isCorrect = (selected === q.answer); sessionAnswers[currentIdx] = isCorrect; 
+            if (!canAnswer) return; canAnswer = false; const q = quizData[currentIdx]; const isCorrect = (selected === q.answer); if (isCorrect) QuizFeedback.correct(); else QuizFeedback.clear(); sessionAnswers[currentIdx] = isCorrect;
             const statKey = q.id;
             const exist = questionStats[statKey] || { total: 0, correct: 0 }; 
             const today = new Date();
@@ -1730,7 +1734,7 @@
             } 
             getEl('feedback-area').classList.remove('hidden'); 
             const explanationEl = getEl('explanation-content');
-            explanationEl.innerHTML = q.explanation;
+            QuizExplanation.render(explanationEl, q.explanation, q.answer);
             // 解説でも数式をレンダリング（DOM更新後に実行）
             setTimeout(() => renderMath(explanationEl), 100);
             getEl('result-badge').innerText = isCorrect ? 'CORRECT' : 'INCORRECT'; 
@@ -1741,7 +1745,7 @@
         function renderDots() { const bar = getEl('dot-bar'); if(!bar) return; bar.innerHTML = ''; quizData.forEach((_, i) => { const d = document.createElement('div'); d.className = 'progress-dot'; d.id = `dot-${i}`; bar.appendChild(d); }); }
         function showModal(title, message) { const modal = getEl('custom-modal'); if(modal) { getEl('modal-title').innerText = title; getEl('modal-message').innerText = message; modal.classList.add('active'); } }
 
-        function finishSession() {
+        function finishSession() { QuizFeedback.clear();
             const oldExp = parseInt(getEl('total-neural-exp').innerText) || 0;
             const oldLv = Math.floor(oldExp / 10);
             getEl('quiz-screen').classList.add('hidden'); getEl('result-screen').classList.remove('hidden');
@@ -1774,9 +1778,9 @@
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
-        window.showHome = () => { getEl('quiz-screen').classList.add('hidden'); getEl('result-screen').classList.add('hidden'); getEl('home-screen').classList.remove('hidden'); updateStatsUI(); window.renderEraMenu(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+        window.showHome = () => { QuizFeedback.clear(); getEl('quiz-screen').classList.add('hidden'); getEl('result-screen').classList.add('hidden'); getEl('home-screen').classList.remove('hidden'); updateStatsUI(); window.renderEraMenu(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
         
-        window.abortQuiz = () => {
+        window.abortQuiz = () => { QuizFeedback.clear();
             if (confirm('演習を中断しますか？進行状況は保存されません。')) {
                 // クイズの状態をリセット
                 currentIdx = 0;
@@ -1966,5 +1970,6 @@
             setOnClick('cloud-sync-toggle-btn', () => { const area = getEl('sync-area'); if (area) area.classList.toggle('hidden'); }); 
         };
     </script>
+<script>QuizFeedback.mountSoundControl(document.getElementById('quiz-screen') || document.body);</script>
 </body>
 </html>
